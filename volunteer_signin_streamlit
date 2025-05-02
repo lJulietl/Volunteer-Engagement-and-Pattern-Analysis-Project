@@ -1,0 +1,176 @@
+import streamlit as st
+import pandas as pd
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from streamlit_autorefresh import st_autorefresh
+import re
+
+# Auto-refresh every 30 seconds
+st_autorefresh(interval=30 * 1000, key="data_refresh")
+
+st.title("📋 Spring Quarter Volunteer Sign-In Data (Live)")
+
+# Google Sheets API Setup
+def get_gspread_client():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive"
+    ]
+    creds = ServiceAccountCredentials.from_json_keyfile_name(
+        "pantry-data-science-project-cafc469e7c30.json", scope
+    )
+    return gspread.authorize(creds)
+
+client = get_gspread_client()
+SHEET_URL = ""
+sheet = client.open_by_url(SHEET_URL)
+
+# Process Weekly Sign-Up Sheets
+def process_week_signup_grid(ws, week_name):
+    raw = ws.get_all_values()
+    max_cols = max(len(r) for r in raw)
+    grid = [r + [""]*(max_cols - len(r)) for r in raw]
+    df = pd.DataFrame(grid)
+
+    st.write(f"📋 Sample for {week_name}")
+    st.dataframe(df.iloc[6:20, :10])
+
+    rows = []
+    # Build header map: col → "Day Date"
+    date_headers = {}
+    for c in range(2, df.shape[1], 2):
+        day = df.iloc[1, c].strip()
+        date = df.iloc[2, c].strip()
+        if day and date:
+            date_headers[c] = f"{day} {date}"
+
+    # Walk each slot
+    for c, daydate in date_headers.items():
+        att_col = c + 1
+        current_time = ""
+        for r in range(8, df.shape[0]):
+            shift_type = df.iloc[r, 0].strip()
+            t = df.iloc[r, 1].strip()
+            if t:
+                current_time = t
+            elif not current_time:
+                continue
+
+            name = df.iloc[r, c].strip()
+            att = df.iloc[r, att_col].strip().lower()
+            if not name:
+                continue
+
+            rows.append({
+                "Name": name,
+                "Week": week_name,
+                "Day and time": f"{daydate}, {current_time}",
+                "Shift Type": shift_type,
+                "Attended": "Yes" if att in ("yes","true","✔","✓") else "No"
+            })
+
+    if rows:
+        st.success(f"✅ {week_name}: {len(rows)} sign-up rows")
+    else:
+        st.warning(f"⚠️ No sign-ups found in {week_name}")
+
+    return pd.DataFrame(rows, columns=["Name","Week","Day and time","Shift Type","Attended"])
+
+
+# Pull Raw Attendance Summary
+def process_attendance_sheet(ws):
+    recs = ws.get_all_records(head=22)
+    df = pd.DataFrame(recs)
+    df = df[df["First + Last Name"].str.strip() != ""]
+
+    rows = []
+    for _, row in df.iterrows():
+        name = row["First + Last Name"].strip()
+        for col in df.columns:
+            val = row[col]
+            if isinstance(val, (int, float)) and val > 0 and "Week" in col and "Hours" in col:
+                week = re.search(r"Week\s*\d+", col).group(0)
+                rows.append({
+                    "Name": name,
+                    "Week": week,
+                    "Day and time": "Logged hours",
+                    "Shift Type": "regular",
+                    "Attended": "Yes"
+                })
+            elif "Food Recovery" in col and val:
+                rows.append({
+                    "Name": name,
+                    "Week": "All Weeks",
+                    "Day and time": "Food Recovery",
+                    "Shift Type": "food recovery",
+                    "Attended": "Yes"
+                })
+            elif "Mobile Pantry" in col and val:
+                rows.append({
+                    "Name": name,
+                    "Week": "All Weeks",
+                    "Day and time": "Mobile Pantry",
+                    "Shift Type": "mobile pantry",
+                    "Attended": "Yes"
+                })
+            elif "Misc" in col and val:
+                rows.append({
+                    "Name": name,
+                    "Week": "All Weeks",
+                    "Day and time": "Misc.",
+                    "Shift Type": "misc",
+                    "Attended": "Yes"
+                })
+
+    return pd.DataFrame(rows, columns=["Name","Week","Day and time","Shift Type","Attended"])
+
+
+# Combine All Data
+def collect_all_data():
+    # Attendance summary placeholders
+    attendance_ws = sheet.worksheet("Names and Attendance")
+    raw_att = process_attendance_sheet(attendance_ws)
+
+    # All weekly sign-up grids
+    weekly_dfs = {}
+    for ws in sheet.worksheets():
+        if "Sign-ups" in ws.title:
+            m = re.search(r"Week\s*\d+", ws.title)
+            week_name = m.group(0) if m else ws.title
+            if not m:
+                st.warning(f"⚠️ Couldn't parse week from '{ws.title}', using full title.")
+            st.info(f"🔍 Processing {week_name}")
+            weekly_dfs[week_name] = process_week_signup_grid(ws, week_name)
+
+    # Expand each attendance row into real shifts
+    all_rows = []
+    for _, att in raw_att.iterrows():
+        wk = att["Week"]
+        nm = att["Name"].lower().strip()
+
+        if wk in weekly_dfs:
+            dfw = weekly_dfs[wk]
+            matches = dfw[dfw["Name"].str.lower().str.strip() == nm].copy()
+            
+            if not matches.empty:
+                all_rows.append(matches)
+                continue
+
+        # fallback if no sign-ups found
+        all_rows.append(pd.DataFrame([att]))
+
+    # Concatenate & dedupe
+    combined = pd.concat(all_rows, ignore_index=True)
+    combined = combined.drop_duplicates(
+        subset=["Name","Week","Day and time","Shift Type"], keep="first"
+    )
+    return combined
+
+# Display + Export 
+df_all = collect_all_data()
+
+st.subheader("🗄️ Live Combined Volunteer Table")
+st.dataframe(df_all[["Name","Week","Day and time","Shift Type","Attended"]], use_container_width=True)
+
+csv = df_all.to_csv(index=False).encode("utf-8")
+st.download_button("📥 Download as CSV", csv, "spring_volunteer_data.csv", "text/csv")
