@@ -284,10 +284,11 @@ def process_attendance_sheet(ws):
     return pd.DataFrame(rows)
 
 # === 5) Combine & Patch "Logged hours" ===
-def collect_all_data():
+def collect_all_data_and_hours():
     weekly_dfs   = []
     pantry_dfs   = []
     recovery_dfs = []
+    name_to_total_hours = {}
 
     for ws in sheet.worksheets():
         t = ws.title.lower()
@@ -304,13 +305,42 @@ def collect_all_data():
             if not dfr.empty:
                 recovery_dfs.append(dfr)
         elif "sign-ups" in t and "week" in t:
-            m  = re.search(r"Week\s*(\d+)", ws.title)
+            m  = re.search(r"Week\\s*(\\d+)", ws.title)
             wl = f"Week {m.group(1)}" if m else ws.title
             w  = process_week_signup_grid(ws, wl)
             if not w.empty:
                 weekly_dfs.append(w)
 
-    attend = process_attendance_sheet(sheet.worksheet("Names and Attendance"))
+    # Extract total hours from Names and Attendance worksheet (column V), dynamically finding the header row
+    ws_attend = sheet.worksheet("Names and Attendance")
+    raw = ws_attend.get_all_values()
+    header_row_idx = None
+    name_col = None
+    total_col = None
+    # Find the header row and column indices
+    for idx, row in enumerate(raw):
+        if any(cell.strip() == "First + Last Name" for cell in row) and any(cell.strip() == "Total Hours" for cell in row):
+            header_row_idx = idx
+            break
+    if header_row_idx is not None:
+        header = raw[header_row_idx]
+        for i, col in enumerate(header):
+            if col.strip() == "First + Last Name":
+                name_col = i
+            if col.strip() == "Total Hours":
+                total_col = i
+        # Only process rows below the header
+        for row in raw[header_row_idx+1:]:
+            if len(row) > max(name_col, total_col):
+                name = row[name_col].strip()
+                try:
+                    total = float(row[total_col])
+                except (ValueError, TypeError, IndexError):
+                    total = 0.0
+                if name:
+                    name_to_total_hours[name] = total
+
+    attend = process_attendance_sheet(ws_attend)
     attend = attend[attend["Sign-Up Type"]=="Attendance Hours"]
 
     # patch logged-hours into weekly sign-ups
@@ -385,10 +415,10 @@ def collect_all_data():
     combined = combined.sort_values(["__ord","Week","Date","Time Block"])
     combined = combined.drop(columns="__ord")
 
-    return combined
+    return combined, name_to_total_hours
 
 # === 8) Render & Download ===
-df_all = collect_all_data()
+df_all, name_to_total_hours = collect_all_data_and_hours()
 
 # show counts
 counts = df_all["Sign-Up Type"].value_counts()
@@ -530,48 +560,9 @@ def detect_dropoffs(df, window_days=14):
     
     return dropoffs
 
-def compute_reputation(df):
-    
+def compute_reputation(df, name_to_total_hours=None):
     # Filter for attended shifts only and create a copy to avoid SettingWithCopyWarning
     attended_df = df[df['Attended'] == 'Yes'].copy()
-    
-    # Helper function to extract hours from Time Block
-    def extract_hours(time_block):
-        if not time_block or not isinstance(time_block, str):
-            return 0
-        
-        # Check for patterns like "X:XX AM/PM – Y:YY AM/PM"
-        match = re.search(r'(\d+):(\d+)\s*(?:AM|PM)\s*[–-]\s*(\d+):(\d+)\s*(?:AM|PM)', time_block, re.IGNORECASE)
-        if match:
-            start_hour, start_min = int(match.group(1)), int(match.group(2))
-            end_hour, end_min = int(match.group(3)), int(match.group(4))
-            
-            # Convert to 24-hour format if needed
-            if 'PM' in time_block.upper() and start_hour < 12:
-                start_hour += 12
-            if 'AM' in time_block.upper() and start_hour == 12:
-                start_hour = 0
-                
-            if 'PM' in time_block.upper() and end_hour < 12:
-                end_hour += 12
-            if 'AM' in time_block.upper() and end_hour == 12:
-                end_hour = 0
-            
-            # Calculate duration in hours
-            hours = (end_hour - start_hour) + (end_min - start_min) / 60
-            return max(0, hours)  # Ensure non-negative
-        
-        # Default values for special shifts
-        if "Stocking Shift" in time_block:
-            return 1.5
-        if "Opening Shift" in time_block or "Closing Shift" in time_block:
-            return 1.0
-        if "Shift Covers" in time_block:
-            return 1.0
-            
-        return 1.0  # Default to 1 hour if we can't parse
-    
-    attended_df['Hours'] = attended_df['Time Block'].apply(extract_hours)
     
     # Extract week numbers for consecutive week calculation
     def extract_week_num(week_str):
@@ -579,18 +570,19 @@ def compute_reputation(df):
             return None
         match = re.search(r'Week\s*(\d+)', week_str)
         return int(match.group(1)) if match else None
-    
     attended_df['Week Num'] = attended_df['Week'].apply(extract_week_num)
     
     # Calculate metrics for each volunteer
     metrics = []
     for name, group in attended_df.groupby('Name'):
-        # Total hours
-        total_hours = group['Hours'].sum()
-        
+        # Use total hours from mapping if available
+        total_hours = 0.0
+        if name_to_total_hours and name in name_to_total_hours:
+            total_hours = name_to_total_hours[name]
+        else:
+            total_hours = 0.0
         # Count distinct shift categories
         shift_types_count = group['Shift Category'].nunique()
-        
         # Calculate consecutive weeks
         consecutive_weeks = 0
         if not group['Week Num'].isna().all():
@@ -605,10 +597,8 @@ def compute_reputation(df):
                         current_streak = 1
                     max_streak = max(max_streak, current_streak)
                 consecutive_weeks = max_streak
-        
         # Calculate reputation score
         reputation_score = int(total_hours // 2) + consecutive_weeks + shift_types_count
-        
         metrics.append({
             'Name': name,
             'Total Hours': round(total_hours, 1),
@@ -616,25 +606,11 @@ def compute_reputation(df):
             'Shift Types Count': shift_types_count,
             'Reputation Score': reputation_score
         })
-    
     # Convert to DataFrame and sort by reputation score
     reputation_df = pd.DataFrame(metrics)
     if not reputation_df.empty:
         reputation_df = reputation_df.sort_values('Reputation Score', ascending=False).reset_index(drop=True)
-    
     return reputation_df
-
-def send_reminder(name):
-    """
-    Stub function for sending reminders to volunteers.
-    In a real implementation, this would send an email or text message.
-    """
-    st.success(f"Reminder would be sent to {name}!")
-    # In a real implementation:
-    # 1. Look up contact information
-    # 2. Compose message
-    # 3. Send via appropriate channel (email, SMS, etc.)
-    return True
 
 # === 10) ANALYTICS UI COMPONENTS ===
 st.title("📊 Volunteer Analytics")
@@ -779,20 +755,6 @@ with tab3:
     else:
         st.write(f"Volunteers who haven't attended shifts in {window_days} days:")
         st.dataframe(dropoffs, use_container_width=True)
-        
-        # Add a way to send reminders to selected volunteers
-        st.subheader("Send Reminders")
-        
-        # Get a list of drop-off volunteer names for the selectbox
-        volunteer_names = dropoffs['Name'].tolist()
-        
-        # Multi-select for volunteers to remind
-        selected_volunteers = st.multiselect("Select volunteers to remind:", volunteer_names)
-        
-        if selected_volunteers:
-            if st.button("Send Reminders to Selected Volunteers"):
-                for name in selected_volunteers:
-                    send_reminder(name)
 
 # TAB 4: Volunteer Reputation
 with tab4:
@@ -800,7 +762,7 @@ with tab4:
     st.write("Reputation scores based on hours, consecutive weeks, and shift diversity.")
     
     # Compute reputation
-    reputation_df = compute_reputation(df_all)
+    reputation_df = compute_reputation(df_all, name_to_total_hours)
     
     if reputation_df.empty:
         st.info("No sufficient data to calculate reputation scores.")
