@@ -522,16 +522,17 @@ with tab1:
         
         # Convert dates to datetime objects
         def parse_date(date_str):
-            try:
-                for fmt in ['%m/%d/%Y', '%Y-%m-%d', '%A, %B %d']:
-                    try:
-                        return datetime.strptime(date_str, fmt).date()
-                    except ValueError:
-                        continue
-                # If no format matches, return None
-                return None
-            except:
-                return None
+            formats = ['%m/%d/%Y', '%Y-%m-%d', '%A, %B %d', '%A %m/%d', '%m/%d']
+            for fmt in formats:
+                try:
+                    parsed = datetime.strptime(date_str, fmt)
+                    # If parsed year is 1900 (i.e., year wasn't in the string), replace with current year
+                    if parsed.year == 1900:
+                        parsed = parsed.replace(year=datetime.now().year)
+                    return parsed.date()
+                except ValueError:
+                    continue
+            return None
         
         attended_df['Parsed Date'] = attended_df['Date'].apply(parse_date)
         
