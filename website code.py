@@ -24,17 +24,16 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 with tab1:
     # === Sheets API Setup ===
     def get_gspread_client():
-        scope = [
-            "https://spreadsheets.google.com/feeds",
-            "https://www.googleapis.com/auth/drive",
-        ]
-        creds = ServiceAccountCredentials.from_json_keyfile_name(
-            "pantry-data-science-project-cafc469e7c30.json", scope
-        )
+        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
+        creds_dict = st.secrets["gcp_service_account"]
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
         return gspread.authorize(creds)
 
+    # Initialize client
     client = get_gspread_client()
-    sheet  = client.open_by_url(
+
+    # Open spreadsheet by URL
+    sheet = client.open_by_url(
         "https://docs.google.com/spreadsheets/d/1D5btDIbj-15goMyBGx1NyHOZ4M9JT6TczhRp5EMF0oU"
     )
 
