@@ -189,71 +189,55 @@ def process_food_recovery_grid(ws):
     raw = ws.get_all_values()
     df = pd.DataFrame(raw)
     rows = []
-    # Find the row with week headers (contains "Week" or "Finals Week")
-    week_row = None
+    # Find the header row by scanning for the cell equal to 'Date/Time'
+    header_row_idx = None
     for idx, row in df.iterrows():
-        if any(re.search(r"(?:Week|Finals Week)", str(cell)) for cell in row):
-            week_row = idx
+        if any(str(cell).strip() == "Date/Time" for cell in row):
+            header_row_idx = idx
             break
-    if week_row is None:
+    if header_row_idx is None:
         return pd.DataFrame(columns=[
-            "Name", "Week", "Date", "Time Block",
-            "Position", "Shift Type", "Attended", "Sign-Up Type"
+            "Name", "Week", "Date", "Position", "Attended", "Shift Type"
         ])
-    col = 4
-    while col < df.shape[1]:
-        week_lbl = str(df.iloc[week_row, col]).strip()
-        # For each event block, scan all rows below the week header
-        # Find the event name from the event header row (row 5, 9, 13, ...)
-        event_row = week_row + 1
-        while event_row < len(df):
-            event_name = str(df.iloc[event_row, 1]).strip() if 1 < len(df.columns) and event_row < len(df) else ""
-            if not event_name:
-                event_row += 1
-                continue
-            # Find the date for this event/week from the first date found in the block
-            date_lbl = ""
-            for r in range(event_row, event_row + 10):
-                if r >= len(df): break
-                val = df.iloc[r, col] if col < len(df.columns) else ""
-                if val and re.match(r"\d{2}/\d{2}/\d{4}", str(val)):
-                    date_lbl = str(val).strip()
-                    break
-            # Now scan all rows in the block for names (including rows like 6, 10, 15, ...)
-            for r in range(event_row, event_row + 20):
-                if r >= len(df): break
-                pos_val  = df.iloc[r, col+1] if col+1 < len(df.columns) and r < len(df) else ""
-                name_val = df.iloc[r, col+2] if col+2 < len(df.columns) and r < len(df) else ""
-                att_val  = df.iloc[r, col+3] if col+3 < len(df.columns) and r < len(df) else ""
-                if not name_val or not str(name_val).strip():
-                    continue
-                # Normalize Volunteer 1/2/3/4 to 'Volunteer'
-                pos_str = str(pos_val).strip()
-                if re.match(r"Volunteer\s*\d+", pos_str, re.I):
-                    position = "Volunteer"
-                else:
-                    position = pos_str if pos_str else "Volunteer"
-                attended = "Yes" if str(att_val).strip().lower() in ["yes", "true", "✔", "✓"] else "No"
-                rows.append({
-                    "Name": str(name_val).strip(),
-                    "Week": week_lbl,
-                    "Date": date_lbl,
-                    "Time Block": "",
-                    "Position": position,
-                    "Shift Type": event_name,
-                    "Attended": attended,
-                    "Sign-Up Type": "Food Recovery"
-                })
-            # Move to next event header (look for next non-empty event name in col 1)
-            next_event_row = event_row + 1
-            while next_event_row < len(df):
-                next_event_name = str(df.iloc[next_event_row, 1]).strip() if 1 < len(df.columns) and next_event_row < len(df) else ""
-                if next_event_name:
-                    break
-                next_event_row += 1
-            event_row = next_event_row
-        col += 4
-    return pd.DataFrame(rows)
+    # Dynamically find the week header row by scanning up to 4 rows above header_row_idx
+    week_header_row = None
+    for r in range(header_row_idx-1, max(header_row_idx-5, -1), -1):
+        row = df.iloc[r].astype(str)
+        if any(cell.strip().lower().startswith("week") for cell in row):
+            week_header_row = r
+            break
+    if week_header_row is None:
+        week_header_row = header_row_idx - 2
+    # Locate all Date/Time blocks
+    block_starts = [c for c, cell in enumerate(df.iloc[header_row_idx]) if str(cell).strip() == "Date/Time"]
+    block_starts.append(df.shape[1])  # sentinel
+    for i in range(len(block_starts)-1):
+        start_col = block_starts[i]
+        end_col   = block_starts[i+1]
+        # Read the Week label directly from the sheet:
+        raw_week = str(df.iat[week_header_row, start_col]).strip()
+        week_lbl = raw_week if raw_week.lower().startswith("week") else None
+        current_date = None
+        for row in range(header_row_idx+1, df.shape[0]):
+            raw_date = str(df.iat[row, start_col]).strip()
+            if raw_date:
+                current_date = raw_date     # fill-forward the date
+            position = str(df.iat[row, start_col+1]).strip()
+            name     = str(df.iat[row, start_col+2]).strip()
+            att_sig  = str(df.iat[row, start_col+3]).strip().lower()
+            if not name:
+                continue                  # skip empty slots
+            position = "Volunteer" if re.match(r"Volunteer\s*\d+", position, re.I) else position
+            attended = "Yes" if att_sig in ["yes","true","✔","✓"] else "No"
+            rows.append({
+              "Name":       name,
+              "Week":       week_lbl,
+              "Date":       current_date,
+              "Position":   position,
+              "Attended":   attended,
+              "Shift Type": "Food Recovery"
+            })
+    return pd.DataFrame(rows, columns=["Name","Week","Date","Position","Attended","Shift Type"])
 
 # === 4) Attendance fallback parser ===
 def process_attendance_sheet(ws):
@@ -515,9 +499,17 @@ def detect_dropoffs(df, window_days=14):
     # Convert dates to datetime objects
     def parse_date(date_str):
         try:
-            for fmt in ['%m/%d/%Y', '%Y-%m-%d', '%A, %B %d']:
+            # Try a variety of formats, including those without a year
+            fmts = [
+                '%m/%d/%Y', '%Y-%m-%d', '%A, %B %d', '%A %m/%d/%Y', '%A %m/%d', '%m/%d', '%A, %m/%d', '%A, %m/%d/%Y'
+            ]
+            for fmt in fmts:
                 try:
-                    return datetime.strptime(date_str, fmt).date()
+                    dt = datetime.strptime(date_str, fmt)
+                    # If the format does not include a year, add the current year
+                    if '%Y' not in fmt:
+                        dt = dt.replace(year=datetime.now().year)
+                    return dt.date()
                 except ValueError:
                     continue
             # If no format matches, return None
@@ -747,8 +739,26 @@ with tab3:
         step=1
     )
     
+    # Add shift type filter
+    shift_types = df_all['Sign-Up Type'].unique().tolist()
+    selected_shift_types = st.multiselect(
+        "Select shift types to include:",
+        options=shift_types,
+        default=shift_types
+    )
+    # Add event name filter (Shift Type)
+    filtered_by_type = df_all[df_all['Sign-Up Type'].isin(selected_shift_types)] if selected_shift_types else df_all
+    event_names = filtered_by_type['Shift Type'].unique().tolist()
+    selected_event_names = st.multiselect(
+        "Select event names to include:",
+        options=event_names,
+        default=event_names
+    )
+    # Filter the dataframe by selected event names
+    filtered_df = filtered_by_type[filtered_by_type['Shift Type'].isin(selected_event_names)] if selected_event_names else filtered_by_type
+    
     # Compute drop-offs
-    dropoffs = detect_dropoffs(df_all, window_days=window_days)
+    dropoffs = detect_dropoffs(filtered_df, window_days=window_days)
     
     if dropoffs.empty:
         st.info(f"No volunteers found who have been inactive for more than {window_days} days.")
