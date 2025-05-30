@@ -11,17 +11,31 @@ from streamlit_autorefresh import st_autorefresh
 
 # 🔁 Auto-refresh every day
 st_autorefresh(interval=86_400_000, key="data_refresh")
-st.title("📋 Spring Quarter Volunteer Sign-In Data (Live)")
+st.title("📋 Spring Quarter Volunteer Engagement and Pattern Analysis")
 # Create tabs for different analytics views
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+    "Contributions",
     "Data",
-    "Weekly Total Shift Count",
+    "Shifts Covered",
     "Day & Time Analysis", 
     "Cancellation Patterns", 
     "Drop-off Volunteers", 
     "Reputation"
 ])
 with tab1:
+    st.write("Shoutout to all the incredible Data Science Team members at The Pantry, this website wouldn't exist without all of your hard work and dedication! Here are some silly animal themed photos of our amazing members!")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.image("Images of Members/IMG_8328.jpg", caption="Juliet Lubin", use_container_width=True)
+
+    with col2:
+        st.image("Images of Members/A99E4468-1302-45B5-A72E-0A703271116C.jpeg", caption="Calvin (Hieu) Hoang", use_container_width=True)
+
+    with col3:
+         st.image("Images of Members/IMG_8841.jpg", caption="Damon Kwan", use_container_width=True)
+with tab2:
+    st.write("Using data collected from our volunteer sign-up sheet, we generated dataframes that allowed us to explore, analyze, and visualize patterns in volunteer-sign ups over time. This data gets updated every day!")
     # === Sheets API Setup ===
     def get_gspread_client():
         scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
@@ -263,6 +277,7 @@ with tab1:
             col += 4
         return pd.DataFrame(rows)
 
+
     # === 4) Attendance fallback parser ===
     def process_attendance_sheet(ws):
         raw = ws.get_all_records(head=22)
@@ -304,12 +319,12 @@ with tab1:
                 continue
             if "mobile pantry" in t:
                 dfm = process_mobile_pantry_grid(ws)
-                st.write(f"Mobile Pantry: {ws.title}", dfm)
+                st.write(f"{ws.title}", dfm)
                 if not dfm.empty:
                     pantry_dfs.append(dfm)
             elif "food recovery" in t:
                 dfr = process_food_recovery_grid(ws)
-                st.write(f"Food Recovery: {ws.title}", dfr)
+                st.write(f"{ws.title}", dfr)
                 if not dfr.empty:
                     recovery_dfs.append(dfr)
             elif "sign-ups" in t and "week" in t:
@@ -622,7 +637,7 @@ with tab1:
         return reputation_df
 
 
-with tab2:
+with tab3:
     def parse_date_to_weekday(date_str, default_year=2025):
     # Handle missing or NaN values gracefully
         if pd.isna(date_str):
@@ -664,9 +679,9 @@ with tab2:
 # Apply to your dataframe column, creating a new 'Weekday' column
 
 # Day & Time Analysis
-with tab3:
+with tab4:
     st.header("📅 Day & Time Analysis")
-    st.write("Analysis of shifts by day and time block, including cancellation rates.")
+    st.write("Analysis of shifts by day and time block, including cancellation rates (Cancellations/Total Shifts)). Ex: A value of 0 means no one has canceled their shifts on that day.")
     
     # Compute day & time analysis
     day_time_df = compute_day_time(df_all)
@@ -733,9 +748,9 @@ with tab3:
     
 
 # Cancellation Patterns
-with tab4:
+with tab5:
     st.header("❌ Cancellation Patterns")
-    st.write("Heatmap of cancellation rates by weekday and time block.")
+    st.write("This is a heatmap of cancellation rates by weekday and time block. Darker shades of red indicates that more people are canceling their shifts on that specific day.")
     
     # Compute cancellation patterns
     cancellation_pattern = compute_cancellation_pattern(df_all)
@@ -755,8 +770,9 @@ with tab4:
         st.info("Not enough data to generate a meaningful heatmap.")
 
 # Drop-off Volunteers
-with tab5:
+with tab6:
     st.header("🚶 Drop-off Volunteers")
+    st.write("This enables us to identify volunteers who have not participated in any shifts for a specified number of days, allowing us to reach out and check in with them.")
     
     # Configurable window for drop-off detection
     window_days = st.slider(
@@ -777,8 +793,9 @@ with tab5:
         st.dataframe(dropoffs, use_container_width=True)
 
 # Volunteer Reputation
-with tab6:
+with tab7:
     st.header("🌟 Volunteer Reputation")
+    st.write("These reputations scores allow us to identify which members are contributing the most!")
     st.markdown("Reputation Score is Total Hours/2 + Number of Consecutive Weeks + Types of Shifts")
     # Compute reputation
     reputation_df = compute_reputation(df_all, name_to_total_hours)
