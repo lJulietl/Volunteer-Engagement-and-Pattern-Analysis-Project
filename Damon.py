@@ -24,7 +24,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
 ])
 
 with tab2:
-    
+
 
     # === 1) Weekly Sign-Ups Parser ===
     def days(tracking):
@@ -693,8 +693,33 @@ with tab4:
     signup_type_counts = df_all.groupby(['Time Block', 'Sign-Up Type']).size().reset_index(name='Count')
     
     # Get unique time blocks and sort by total count
+    chronological_order = [
+    'Stocking Shift: 9:00 AM – 10:30 AM',
+    '10:00 AM – 11:00 AM',
+    '11:00 AM – 12:00 PM',
+    '12:00 PM – 1:00 PM',
+    '1:00 PM – 2:00 PM',
+    '2:00 PM – 3:00 PM',
+    '3:00 PM – 4:00 PM',
+    'Closing Shift: 4:00 PM – 4:45 PM',
+    'Opening Shift: 12:00 PM – 1:00 PM',
+    'Closing Shift: 1:00 PM – 2:00 PM',
+    'Shift Covers (variable)',
+    '10AM-11AM',
+    '11AM-12PM ',
+    '12PM-1PM',
+    '1PM-2PM',
+    '2PM-3PM',
+    '3PM-4PM',
+    'Mondays 1:15 PM',
+    'Thursdays 5:00 PM',
+    'Saturday 12:45 PM'
+        ]
+
+
     time_block_totals = signup_type_counts.groupby('Time Block')['Count'].sum().sort_values(ascending=False)
     sorted_time_blocks = time_block_totals.index.tolist()
+    
     
     # Filter for non-empty time blocks
     signup_type_counts = signup_type_counts[signup_type_counts['Time Block'].notna() & 
@@ -710,7 +735,8 @@ with tab4:
     )
     
     # Reorder rows by total count
-    pivot_df = pivot_df.reindex(sorted_time_blocks)
+    existing_blocks = [tb for tb in chronological_order if tb in pivot_df.index]
+    pivot_df = pivot_df.reindex(existing_blocks)
     
     # Define colors for different sign-up types
     colors = {
@@ -741,6 +767,8 @@ with tab4:
     plt.ylabel('Number of Shifts')
     
     st.pyplot(fig)
+    st.write("Unique Time Blocks:", df_all['Time Block'].unique())
+
     
     
 
