@@ -767,7 +767,6 @@ with tab4:
     plt.ylabel('Number of Shifts')
     
     st.pyplot(fig)
-    st.write("Unique Time Blocks:", df_all['Time Block'].unique())
 
     
     
