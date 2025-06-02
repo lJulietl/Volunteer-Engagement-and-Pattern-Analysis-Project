@@ -58,6 +58,18 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+st.markdown("""
+    <style>
+    @media only screen and (max-width: 768px) {
+        body {
+            background: none !important;
+        }
+        .stApp {
+            background: none !important;
+        }
+    }
+    </style>
+""", unsafe_allow_html=True)
 
 # 🔁 Auto-refresh every day
 st_autorefresh(interval=86_400_000, key="data_refresh")
