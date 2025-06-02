@@ -9,9 +9,26 @@ import seaborn as sns
 from oauth2client.service_account import ServiceAccountCredentials
 from streamlit_autorefresh import st_autorefresh
 
+image_url = "https://raw.githubusercontent.com/lJulietl/Volunteer-Engagement-and-Pattern-Analysis-Project/main/Background%20Images/1b1ac8bd-df5d-42c5-9237-01aacf78d02a.webp"
+
+st.markdown(
+    f"""
+    <style>
+    .stApp {{
+        background-image: url("{image_url}");
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+
+
 # 🔁 Auto-refresh every day
 st_autorefresh(interval=86_400_000, key="data_refresh")
-st.title("📋 Spring Quarter Volunteer Engagement and Pattern Analysis")
+st.title("📋 SQ2025 Volunteer Engagement and Pattern Analysis")
 # Create tabs for different analytics views
 tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "Contributions",
@@ -30,7 +47,7 @@ with tab1:
         st.image("Images of Members/IMG_8328.jpg", caption="Juliet Lubin", use_container_width=True)
 
     with col2:
-        st.image("Images of Members/A99E4468-1302-45B5-A72E-0A703271116C.jpeg", caption="Calvin (Hieu) Hoang", use_container_width=True)
+        st.image("Images of Members/A99E4468-1302-45B5-A72E-0A703271116C.jpeg", caption="Hieu (Calvin) Hoang", use_container_width=True)
 
     with col3:
          st.image("Images of Members/IMG_8841.jpg", caption="Damon Kwan", use_container_width=True)
@@ -230,9 +247,13 @@ with tab2:
             event_row = week_row + 1
             while event_row < len(df):
                 event_name = str(df.iloc[event_row, 1]).strip() if 1 < len(df.columns) and event_row < len(df) else ""
-                if not event_name:
+
+                if not event_name or event_name in [
+                    "Recoveries/Events", "Task Summary", "Meet-up Location/Time", "Date/Time Sign-Ups", "Canceled Recovery"
+                ]:
                     event_row += 1
                     continue
+
                 # Find the date for this event/week from the first date found in the block
                 date_lbl = ""
                 for r in range(event_row, event_row + 10):
@@ -256,16 +277,27 @@ with tab2:
                     else:
                         position = pos_str if pos_str else "Volunteer"
                     attended = "Yes" if str(att_val).strip().lower() in ["yes", "true", "✔", "✓"] else "No"
+
+                    if event_name == "Dining Commons Recovery":
+                        time_block = "Mondays 1:15 PM"
+                    elif event_name == "DC Food Tray Portioning":
+                        time_block = "Thursdays 5:00 PM"
+                    elif event_name == "Farmers Market Recovery + Distribution (Green or Orchard Park Apartments)":
+                        time_block = "Saturday 12:45 PM"
+                    else:
+                        time_block = ""
+
                     rows.append({
                         "Name": str(name_val).strip(),
                         "Week": week_lbl,
                         "Date": date_lbl,
-                        "Time Block": "",
+                        "Time Block": time_block,
                         "Position": position,
                         "Shift Type": event_name,
                         "Attended": attended,
                         "Sign-Up Type": "Food Recovery"
                     })
+
                 # Move to next event header (look for next non-empty event name in col 1)
                 next_event_row = event_row + 1
                 while next_event_row < len(df):
@@ -638,6 +670,7 @@ with tab2:
 
 
 with tab3:
+    st.write("These graphs show how many shifts are covered for each pantry space each week and help us identify trends regarding weeks that are particulary busy or whether or not there is a decrease in volunteers during exam seasons.")
     def parse_date_to_weekday(date_str, default_year=2025):
     # Handle missing or NaN values gracefully
         if pd.isna(date_str):
@@ -661,7 +694,14 @@ with tab3:
     df_p = df_all[df_all["Sign-Up Type"] == "Weekly Sign-Up"]
      # Define a helper function to plot counts per week
     def plot_weekly_counts(df, title):
+        # Group by week and count
         weekly_counts = df.groupby('Week').size().reset_index(name='Count')
+
+        # Extract numeric week number for proper sorting
+        weekly_counts['WeekNum'] = weekly_counts['Week'].str.extract(r'(\d+)').astype(int)
+        weekly_counts = weekly_counts.sort_values('WeekNum')
+
+        # Plot
         fig, ax = plt.subplots(figsize=(10,6))
         sns.lineplot(data=weekly_counts, x='Week', y='Count', marker='o', ax=ax)
         ax.set_title(title)
@@ -678,10 +718,9 @@ with tab3:
 
 # Apply to your dataframe column, creating a new 'Weekday' column
 
-# Day & Time Analysis
 with tab4:
     st.header("📅 Day & Time Analysis")
-    st.write("Analysis of shifts by day and time block, including cancellation rates (Cancellations/Total Shifts)). Ex: A value of 0 means no one has canceled their shifts on that day.")
+    st.write("This is an analysis of shifts by day and time block, including cancellation rates (Cancellations/Total Shifts)). Ex: A value of 0 means no one has canceled their shifts on that day.")
     
     # Compute day & time analysis
     day_time_df = compute_day_time(df_all)
@@ -696,8 +735,33 @@ with tab4:
     signup_type_counts = df_all.groupby(['Time Block', 'Sign-Up Type']).size().reset_index(name='Count')
     
     # Get unique time blocks and sort by total count
+    chronological_order = [
+    'Stocking Shift: 9:00 AM – 10:30 AM',
+    '10:00 AM – 11:00 AM',
+    '11:00 AM – 12:00 PM',
+    '12:00 PM – 1:00 PM',
+    '1:00 PM – 2:00 PM',
+    '2:00 PM – 3:00 PM',
+    '3:00 PM – 4:00 PM',
+    'Closing Shift: 4:00 PM – 4:45 PM',
+    'Opening Shift: 12:00 PM – 1:00 PM',
+    'Closing Shift: 1:00 PM – 2:00 PM',
+    'Shift Covers (variable)',
+    '10AM-11AM',
+    '11AM-12PM ',
+    '12PM-1PM',
+    '1PM-2PM',
+    '2PM-3PM',
+    '3PM-4PM',
+    'Mondays 1:15 PM',
+    'Thursdays 5:00 PM',
+    'Saturday 12:45 PM'
+        ]
+
+
     time_block_totals = signup_type_counts.groupby('Time Block')['Count'].sum().sort_values(ascending=False)
     sorted_time_blocks = time_block_totals.index.tolist()
+    
     
     # Filter for non-empty time blocks
     signup_type_counts = signup_type_counts[signup_type_counts['Time Block'].notna() & 
@@ -713,7 +777,8 @@ with tab4:
     )
     
     # Reorder rows by total count
-    pivot_df = pivot_df.reindex(sorted_time_blocks)
+    existing_blocks = [tb for tb in chronological_order if tb in pivot_df.index]
+    pivot_df = pivot_df.reindex(existing_blocks)
     
     # Define colors for different sign-up types
     colors = {
@@ -744,13 +809,14 @@ with tab4:
     plt.ylabel('Number of Shifts')
     
     st.pyplot(fig)
+
     
     
 
 # Cancellation Patterns
 with tab5:
     st.header("❌ Cancellation Patterns")
-    st.write("This is a heatmap of cancellation rates by weekday and time block. Darker shades of red indicates that more people are canceling their shifts on that specific day.")
+    st.write("This is a heatmap of cancellation rates by weekday and time block. Darker shades of red indicate that more people are canceling their shifts on that specific day/time.")
     
     # Compute cancellation patterns
     cancellation_pattern = compute_cancellation_pattern(df_all)
@@ -772,7 +838,7 @@ with tab5:
 # Drop-off Volunteers
 with tab6:
     st.header("🚶 Drop-off Volunteers")
-    st.write("This enables us to identify volunteers who have not participated in any shifts for a specified number of days, allowing us to reach out and check in with them.")
+    st.write("This allows us to identify volunteers who have not participated in any shifts for a specified number of days, allowing us to reach out and check in with them.")
     
     # Configurable window for drop-off detection
     window_days = st.slider(
@@ -795,8 +861,8 @@ with tab6:
 # Volunteer Reputation
 with tab7:
     st.header("🌟 Volunteer Reputation")
-    st.write("These reputations scores allow us to identify which members are contributing the most!")
-    st.markdown("Reputation Score is Total Hours/2 + Number of Consecutive Weeks + Types of Shifts")
+    st.write("These reputations scores allow us to identify which members are contributing the most! Total Hours should match the total hours on the volunteer sign-up sheet. To encourage ongoing and consistent volunteering, we placed greater weight on the number of consecutive weeks someone has volunteered and the variety of shifts they've completed (Ex: Mobile Pantry, Food Recovery, Shift Lead, etc) rather than just the total number of hours volunteered.")
+    st.markdown("Reputation Score = Total Hours/2 + Number of Consecutive Weeks + Types of Shifts")
     # Compute reputation
     reputation_df = compute_reputation(df_all, name_to_total_hours)
     
