@@ -77,13 +77,16 @@ with tab1:
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        st.image("Images of Members/IMG_8328.jpg", caption="Juliet Lubin", use_container_width=True)
+        st.image("Images of Members/IMG_8328.jpg", use_container_width=True)
+        st.markdown('<p style="color:black; text-align:center;">Juliet Lubin</p>', unsafe_allow_html=True)
 
     with col2:
-        st.image("Images of Members/A99E4468-1302-45B5-A72E-0A703271116C.jpeg", caption="Hieu (Calvin) Hoang", use_container_width=True)
+        st.image("Images of Members/A99E4468-1302-45B5-A72E-0A703271116C.jpeg", use_container_width=True)
+        st.markdown('<p style="color:black; text-align:center;">Hieu (Calvin) Hoang</p>', unsafe_allow_html=True)
 
     with col3:
-         st.image("Images of Members/IMG_8841.jpg", caption="Damon Kwan", use_container_width=True)
+        st.image("Images of Members/IMG_8841.jpg", use_container_width=True)
+        st.markdown('<p style="color:black; text-align:center;">Damon Kwan</p>', unsafe_allow_html=True)
 with tab2:
     st.write("Using data collected from our volunteer sign-up sheet, we generated dataframes that allowed us to explore, analyze, and visualize patterns in volunteer-sign ups over time. This data gets updated every day!")
     # === Sheets API Setup ===
