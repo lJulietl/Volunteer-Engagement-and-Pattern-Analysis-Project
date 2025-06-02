@@ -25,6 +25,39 @@ st.markdown(
     unsafe_allow_html=True
 )
 
+st.markdown(
+    """
+    <style>
+    /* Force all text inside radio buttons to be black */
+    div[role="radiogroup"] * {
+        color: black !important;
+    }
+
+    /* Ensure all text in widgets, headers, and labels is black */
+    .stTabs [role="tab"], 
+    html, body, .stMarkdown, .stTextInput, .stSelectbox, .stHeader, .stSubHeader, 
+    h1, h2, h3, h4, h5, h6, .stHeader, label[data-testid="stWidgetLabel"] {
+        color: black !important;
+    }
+
+    /* General Notification Styling */
+    div[data-testid="stNotification"] {
+        padding: 10px !important;
+        border-radius: 5px !important;
+        color: black !important;
+    }
+
+
+    
+
+    /* Ensure background does not override the text color */
+    .stApp {
+        background-color: white !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
 
 # 🔁 Auto-refresh every day
 st_autorefresh(interval=86_400_000, key="data_refresh")
