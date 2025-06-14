@@ -24,7 +24,6 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
-
 st.markdown(
     """
     <style>
@@ -58,6 +57,7 @@ st.markdown(
     """,
     unsafe_allow_html=True
 )
+
 st.markdown("""
     <style>
     @media only screen and (max-width: 768px) {
@@ -742,21 +742,31 @@ with tab3:
     df_p = df_all[df_all["Sign-Up Type"] == "Weekly Sign-Up"]
      # Define a helper function to plot counts per week
     def plot_weekly_counts(df, title):
+
         # Group by week and count
         weekly_counts = df.groupby('Week').size().reset_index(name='Count')
 
-        # Extract numeric week number for proper sorting
-        weekly_counts['WeekNum'] = weekly_counts['Week'].str.extract(r'(\d+)').astype(int)
+        # Ensure 'Week' is string for regex to work
+        weekly_counts['Week'] = weekly_counts['Week'].astype(str)
+
+        # Extract numeric week number for sorting
+        weekly_counts['WeekNum'] = weekly_counts['Week'].str.extract(r'(\d+)')[0].astype('Int64')
+
+        # Drop rows with missing WeekNum (if any)
+        weekly_counts = weekly_counts.dropna(subset=['WeekNum'])
+
+        # Sort by numeric week number
         weekly_counts = weekly_counts.sort_values('WeekNum')
 
         # Plot
-        fig, ax = plt.subplots(figsize=(10,6))
+        fig, ax = plt.subplots(figsize=(10, 6))
         sns.lineplot(data=weekly_counts, x='Week', y='Count', marker='o', ax=ax)
         ax.set_title(title)
         ax.set_ylabel('Count')
         plt.xticks(rotation=45)
         plt.tight_layout()
         st.pyplot(fig)
+
 
     plot_weekly_counts(df_m, 'Volunteer Shifts Covered for Mobile Pantry per Week')
     plot_weekly_counts(df_fr, 'Volunteer Shifts Covered for Food Recovery per Week')
